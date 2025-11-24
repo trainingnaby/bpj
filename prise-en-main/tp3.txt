@@ -1,0 +1,38 @@
+EXERCICE 3 — Champs mutables dans equals() / hashCode()
+Domaine métier : Gestion des abonnés et suivi logistique
+====================================================================
+
+Contexte général
+----------------
+Deux cas distincts mais similaires : modification d’un champ utilisé comme clé
+dans une collection de hachage. Ce phénomène provoque ce qu’on appelle des
+“objets fantômes” : existant encore dans la structure, mais devenus
+inaccessibles car leur hashCode ne correspond plus au bucket d’origine.
+
+--------------------------------------------------------------------
+Partie A — Annuaire d’abonnés (HashSet)
+--------------------------------------------------------------------
+
+Contexte métier
+---------------
+Un service gère des abonnés identifiés par leur email. Celui-ci peut changer
+suite à une migration de boîte ou la volonté de l'utilisateur.
+
+Si equals/hashCode sont basés sur un champ modifiable, l’abonné devient
+introuvable dans les structures de données.
+
+Classes à créer
+---------------
+Package : com.example.equalsworkshop.mutable
+
+1) Classe Subscriber
+   - Champ :
+       private String email;   // volontairement mutable
+   - Méthode : setEmail(String newEmail)
+   - equals(Object) et hashCode() basés sur email (version incorrecte)
+
+2) Dans MutableMain (partie abonnés) :
+   - démontrer :
+       • contains(s) = false après modification,
+       • remove(s) = false,
+       • taille du HashSet identique.
