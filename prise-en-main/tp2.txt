@@ -1,0 +1,40 @@
+====================================================================
+EXERCICE 2 — getClass() au lieu de instanceof
+Domaine métier : Inventaire matériel et parc informatique
+====================================================================
+
+Contexte métier
+---------------
+Une entreprise gère un parc d’équipements : desktops, imprimantes, tablettes,
+smartphones… Tous les appareils sont identifiés par un numéro de série unique.
+Les appareils mobiles sont un cas particulier, mais restent des équipements
+standard du point de vue inventaire.
+
+Dans le système existant, certains appareils mobiles n’apparaissent jamais
+comme présents dans l’inventaire, même si leur numéro de série est correct.
+Le problème vient du fait que equals() utilise getClass() au lieu de instanceof.
+
+Classes à créer
+---------------
+Package : com.example.equalsworkshop.getclass
+
+1) Classe Device
+   - Champ :
+       private final String serial;
+   - equals(Object o) — version incorrecte :
+       • vérifier que o.getClass() == this.getClass()
+       • comparer serial
+   - hashCode() basé sur serial
+
+2) Classe MobileDevice (hérite de Device)
+   - Champ :
+       private final String imei;
+   - equals(Object o) — version incorrecte :
+       • même logique que Device : getClass() strict
+       • comparer serial et imei
+
+3) Classe GetClassMain
+   - main montrant :
+       • base.equals(mobile)
+       • mobile.equals(base)
+       • List<Device>.contains()
