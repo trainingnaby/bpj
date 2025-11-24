@@ -1,0 +1,50 @@
+====================================================================
+EXERCICE 1 — Asymétrie entre classe parente et classe enfant
+Domaine métier : Billetterie et contrôle d’accès
+====================================================================
+
+Contexte métier
+---------------
+Une société gère l'accès à un salon professionnel. Chaque place achetée est
+associée à un ticket standard. Certains visiteurs reçoivent un ticket VIP qui
+donne droit à des services supplémentaires (accès lounge).
+
+Dans la logique métier :
+• Un ticket VIP reste un ticket au sens de l'accès au siège.
+• Les deux types doivent donc être considérés comme “identiques” s'ils
+  pointent vers le même événement et le même siège.
+
+Dans l’application existante, le contrôle d’accès présente des comportements
+incohérents : certains tickets VIP sont refusés comme “inconnus” à l’entrée,
+alors que le même contrôle fonctionne dans l’autre sens. L’origine du problème
+provient de l’asymétrie dans equals().
+
+Classes à créer
+---------------
+Package : com.example.equalsworkshop.symmetry
+
+1) Classe Ticket
+   - Champs :
+       private final String eventCode;
+       private final String seat;
+   - Constructeur : Ticket(String eventCode, String seat)
+   - equals(Object o) :
+       • utiliser instanceof Ticket (donc accepte les sous-classes)
+       • comparer eventCode et seat
+   - hashCode() basé sur les deux champs
+
+2) Classe VipTicket (hérite de Ticket)
+   - Champ :
+       private final boolean loungeAccess;
+   - Constructeur : VipTicket(String eventCode, String seat, boolean loungeAccess)
+   - equals(Object o) — version volontairement incorrecte :
+       • utiliser instanceof VipTicket uniquement
+       • appeler super.equals()
+       • comparer loungeAccess
+   - hashCode() : 31 * super.hashCode() + Boolean.hashCode(loungeAccess)
+
+3) Classe SymmetryMain
+   - contient un main affichant :
+       • résultat de t.equals(v)
+       • résultat de v.equals(t)
+       • démonstration sur HashSet<Ticket>
