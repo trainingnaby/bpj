@@ -1,0 +1,155 @@
+TP Fil Rouge — Jour 2 (Après-midi)
+Énoncé détaillé – Annotations Java & programmation déclarative
+=============================================================
+
+Objectif pédagogique
+--------------------
+Sur la base du code de la 2ème demi-journée (découpage en couches, services, repositories),
+vous allez introduire des **annotations Java** pour :
+
+- documenter vos services métier (use cases),
+- marquer vos composants techniques (repositories),
+- et exploiter ces annotations à l’exécution via la réflexion.
+
+Sujets travaillés :
+- Définition d’annotations personnalisées (@interface)
+- Meta-annotations : @Retention, @Target
+- Utilisation déclarative dans le code (services, repositories)
+- Lecture des annotations avec la réflexion (API java.lang.reflect)
+- Toujours respecter KISS / DRY / SOC / POJO
+
+Contexte
+--------
+L’équipe Room4U souhaite mieux documenter les cas d’usage et les composants techniques
+sans ajouter de dépendance à un framework. L’idée est d’utiliser des annotations « maison »
+pour :
+- marquer les méthodes de service qui représentent des use cases,
+- marquer les classes de repository,
+- offrir une petite fonctionnalité d’« introspection » pour lister les use cases exposés
+  et les composants techniques disponibles.
+
+Structure de départ
+-------------------
+Vous disposez déjà des packages (jour 2 matin) :
+
+room4u.domain     : modèle métier (Salle, Reservation, Creneau, ...)
+room4u.repository : repositories en mémoire
+room4u.service    : SalleService / DefaultSalleService, ReservationService / DefaultReservationService
+room4u.MainApp    : code de démonstration
+
+Vous allez ajouter :
+
+room4u.annotations : annotations & utilitaire d’exploration
+
+
+Étape 1 : Créer une annotation @UseCase
+---------------------------------------
+
+1.1 Définition
+--------------
+Créer l’annotation room4u.annotations.UseCase :
+
+- Cible : METHOD
+- Rétention : RUNTIME (les annotations doivent être visibles à l’exécution)
+- Attributs :
+  - String value();   // description lisible du use case
+
+Exemple souhaité :
+
+@UseCase("Créer une réservation pour une salle")
+Reservation creerReservation(...);
+
+1.2 Utilisation sur les services
+--------------------------------
+Annoter les méthodes des interfaces de service :
+
+Dans SalleService :
+- listerToutesLesSalles()                -> @UseCase("Lister toutes les salles")
+- listerSallesDisponibles()             -> @UseCase("Lister les salles disponibles")
+- rechercherParCapaciteEtEquipement(...) -> @UseCase("Rechercher des salles par capacité et équipement")
+- regrouperParEtat()                    -> @UseCase("Regrouper les salles par état")
+
+Dans ReservationService :
+- creerReservation(...)                 -> @UseCase("Créer une réservation")
+- listerToutesLesReservations()         -> @UseCase("Lister toutes les réservations")
+- listerReservationsPourSalle(...)      -> @UseCase("Lister les réservations pour une salle")
+- annulerReservation(...)               -> @UseCase("Annuler une réservation")
+
+Étape 2 : Créer une annotation @RepositoryComponent
+---------------------------------------------------
+
+2.1 Définition
+--------------
+Créer l’annotation room4u.annotations.RepositoryComponent :
+
+- Cible : TYPE
+- Rétention : RUNTIME
+- Attributs :
+  - String value() default "";  // nom logique du composant (ex: "salleRepository", "reservationRepository")
+
+2.2 Utilisation sur les repositories
+------------------------------------
+Annoter les repositories existants :
+
+- InMemorySalleRepository       -> @RepositoryComponent("salleRepository")
+- InMemoryReservationRepository -> @RepositoryComponent("reservationRepository")
+
+Étape 3 : Créer un utilitaire d’exploration d’annotations
+---------------------------------------------------------
+
+Créer la classe finale room4u.annotations.AnnotationExplorer avec :
+
+3.1 Méthode d’affichage des use cases
+--------------------------------------
+public static void printUseCases(Class<?>... serviceTypes)
+
+- Pour chaque type passé en paramètre (par ex. SalleService.class, ReservationService.class) :
+  - Parcourir les méthodes publiques déclarées.
+  - Identifier celles annotées avec @UseCase.
+  - Afficher sur la console :
+    - le nom de la classe
+    - le nom de la méthode
+    - la description fournie dans l’annotation.
+
+Exemple de sortie :
+
+Use cases exposés :
+- room4u.service.SalleService.listerToutesLesSalles : Lister toutes les salles
+- room4u.service.ReservationService.creerReservation : Créer une réservation
+
+3.2 Méthode d’affichage des repositories
+----------------------------------------
+public static void printRepositories(Class<?>... repositoryTypes)
+
+- Pour chaque type passé en paramètre (par ex. InMemorySalleRepository.class, InMemoryReservationRepository.class) :
+  - Vérifier la présence de l’annotation @RepositoryComponent.
+  - Afficher :
+    - le nom de la classe
+    - la valeur du champ value() de l’annotation.
+
+Exemple de sortie :
+
+Repositories détectés :
+- room4u.repository.InMemorySalleRepository [salleRepository]
+- room4u.repository.InMemoryReservationRepository [reservationRepository]
+
+Étape 4 : Intégration dans MainApp
+----------------------------------
+
+Adapter room4u.MainApp pour :
+
+- Avant de lancer les scénarios métier, afficher les use cases et les repositories détectés :
+  - AnnotationExplorer.printUseCases(SalleService.class, ReservationService.class);
+  - AnnotationExplorer.printRepositories(InMemorySalleRepository.class, InMemoryReservationRepository.class);
+
+- Puis dérouler exactement les scénarios métier de la 2ème demi-journée (création de salles, réservations, tests d’erreurs, etc.).
+
+Cette étape met en évidence :
+- que vos services sont autodescriptifs via @UseCase,
+- que vos repositories sont repérables via @RepositoryComponent,
+- que l’architecture reste simple (KISS) et orthogonale (responsabilités séparées).
+
+Bonus (si temps) :
+------------------
+- Ajouter une annotation @ReadOnly et l’utiliser sur certaines méthodes ou classes.
+- Simuler un petit contrôle qui vérifie que certaines méthodes annotées ne modifient pas l’état (contrainte uniquement « conventionnelle » ici).
