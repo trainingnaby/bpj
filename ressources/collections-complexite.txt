@@ -1,0 +1,16 @@
+STRUCTURE        | add           | add at index   | remove        | remove at index | contains      | get(index)    | iteration     | Quand l'utiliser / Situations adaptées
+-----------------+---------------+----------------+---------------+-----------------+---------------+---------------+----------------+--------------------------------------------------------------
+ArrayList        | O(1) amorti   | O(n)           | O(n)          | O(n)            | O(n)          | O(1)          | O(n) rapide    | Accès fréquent par index, beaucoup de lecture, ajout en fin
+LinkedList       | O(1) extrémité| O(n)           | O(1) extrémité| O(n)            | O(n)          | O(n)          | O(n)           | Insertion/suppression fréquente en tête/queue, usage intensif du ListIterator
+ArrayDeque       | O(1) amorti   | n/a            | O(1) amorti   | n/a             | O(n)          | n/a           | O(n) très rapide | Pile (stack) ou file (queue), meilleure alternative à LinkedList pour FIFO/LIFO
+HashSet          | O(1) moy.     | n/a            | O(1) moy.     | n/a             | O(1) moy.     | n/a           | O(n)           | Vérifier existence, ensemble non trié, très rapide, pas d'ordre requis
+LinkedHashSet    | O(1) moy.     | n/a            | O(1) moy.     | n/a             | O(1) moy.     | n/a           | O(n) ordonné    | Comme HashSet mais avec ordre d'insertion préservé, itération stable
+TreeSet          | O(log n)      | n/a            | O(log n)      | n/a             | O(log n)      | n/a           | O(n) trié       | Ensemble trié, recherche par intervalle
+
+
+
+STRUCTURE        | put           | get           | remove        | containsKey    | iteration     | Ordre          | Quand l'utiliser / Situations adaptées
+-----------------+---------------+---------------+---------------+----------------+----------------+-----------------+------------------------------------------------------------
+HashMap          | O(1) moy.     | O(1) moy.     | O(1) moy.     | O(1) moy.      | O(n)           | Aucun           | Map par défaut, très rapide, recherche clé→valeur efficace, pas d'ordre garanti
+LinkedHashMap    | O(1) moy.     | O(1) moy.     | O(1) moy.     | O(1) moy.      | O(n) ordonné   | Ordre insertion | Quand il faut ordre stable des clés
+TreeMap          | O(log n)      | O(log n)      | O(log n)      | O(log n)       | O(n) trié      | Ordre trié      | Map triée, recherches de plages (subMap), besoin d'ordre naturel ou Comparator
