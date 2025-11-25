@@ -1,0 +1,203 @@
+TP Fil Rouge — Jour 2
+Énoncé détaillé – Découpage en couches, orthogonalité, KISS / DRY / SOC / POJO
+=============================================================================
+
+Objectif pédagogique
+--------------------
+Sur la base du modèle métier réalisé la veille (Salle, Creneau, Reservation, Repository, etc.) :
+
+- Introduire un **découpage en couches** clair (domain, repository, service, application).
+- Assurer l’**orthogonalité** : chaque couche traite un type de responsabilité bien séparé.
+- Mettre en pratique les principes :
+  - KISS (Keep It Simple, Stupid)
+  - DRY (Don’t Repeat Yourself)
+  - SOC (Separation Of Concerns)
+  - POJO (Plain Old Java Objects)
+
+Contexte
+--------
+Vous continuez le développement de la plateforme Room4U.
+Vous allez maintenant structurer le code en couches et créer des services métiers
+qui exposent des fonctionnalités de plus haut niveau (use cases), tout en gardant
+le code simple, testable et sans dépendance à un framework.
+
+Structure du projet
+-------------------
+Reprendre la structure suivante (ou l’importer depuis le projet de correction Jour 1) :
+
+src/main/java
+    room4u/
+        MainApp.java
+        domain/
+        repository/
+        service/   (NOUVEAU)
+
+Rappel (couches) :
+- package domain    : objets métier + règles métiers de base
+- package repository: gestion de la persistance (ici : en mémoire)
+- package service   : cas d’usage applicatifs (coordination métier)
+- MainApp           : « client » de la couche service (interface utilisateur très simplifiée)
+
+Étape 1 : Compléter le modèle métier (si nécessaire)
+----------------------------------------------------
+Si vous repartez de zéro, ajouter dans room4u.domain (sinon réutiliser ceux fournis) :
+
+- Identifiable<ID>
+- Salle, EtatSalle
+- Creneau
+- Reservation, EtatReservation
+- Exceptions métiers : SalleIndisponibleException, CreneauInvalideException, CreneauInvalideException
+- SalleUtils
+- Repository<ID, T extends Identifiable<ID>>
+- InMemorySalleRepository
+
+Étape 2 : Créer un repository pour les réservations
+---------------------------------------------------
+
+2.1 Interface de repository générique (rappel)
+----------------------------------------------
+room4u.repository.Repository<ID, T extends Identifiable<ID>> :
+
+- void ajouter(T entity);
+- Optional<T> trouverParId(ID id);
+- List<T> toutes();
+
+2.2 Implémentation InMemoryReservationRepository
+------------------------------------------------
+Créer room4u.domain.Reservation qui implémente Identifiable<String> (si pas déjà fait) en ajoutant :
+
+- public String id() { ... }
+
+Puis créer room4u.repository.InMemoryReservationRepository :
+
+- Implémente Repository<String, Reservation>
+- Utilise une Map<String, Reservation>
+- Méthodes :
+  - ajouter(Reservation reservation)
+  - Optional<Reservation> trouverParId(String id)
+  - List<Reservation> toutes()
+- Ajouter une méthode spécifique (orthogonalité métier) :
+  - List<Reservation> trouverParSalle(String salleId)
+  - List<Reservation> trouverParUtilisateur(String utilisateur)
+
+Décisions de conception :
+- Garder la classe simple (POJO + Map) → KISS.
+- Pas de logique métier dans le repository → SOC/orthogonalité.
+
+Étape 3 : Créer la couche service pour les salles
+-------------------------------------------------
+
+3.1 Interface SalleService
+--------------------------
+Créer room4u.service.SalleService avec :
+
+- List<Salle> listerToutesLesSalles();
+- List<Salle> listerSallesDisponibles();
+- List<Salle> rechercherParCapaciteEtEquipement(int capaciteMin, String equipement);
+- Map<EtatSalle, List<Salle>> regrouperParEtat();
+
+3.2 Implémentation DefaultSalleService
+--------------------------------------
+Créer room4u.service.DefaultSalleService qui :
+
+- dépend de InMemorySalleRepository (injection par constructeur)
+- délègue aux utils lorsqu’il y a déjà une logique existante (DRY)
+- ne fait pas directement de manipulations bas niveau de Map/Collections
+  (cela reste dans repository / utils → orthogonalité)
+
+Exemples :
+- listerToutesLesSalles() appelle repository.toutes()
+- listerSallesDisponibles() filtre sur EtatSalle.DISPONIBLE
+- rechercherParCapaciteEtEquipement(...) utilise SalleUtils.filtrerParCapacite puis filtrerParEquipement
+- regrouperParEtat() utilise SalleUtils.regrouperParEtat
+
+Étape 4 : Créer la couche service pour les réservations
+-------------------------------------------------------
+
+4.1 Interface ReservationService
+--------------------------------
+Créer room4u.service.ReservationService avec :
+
+- Reservation creerReservation(String salleId, Creneau creneau, String utilisateur)
+- List<Reservation> listerToutesLesReservations();
+- List<Reservation> listerReservationsPourSalle(String salleId);
+- void annulerReservation(String reservationId);
+
+4.2 Implémentation DefaultReservationService
+--------------------------------------------
+Créer room4u.service.DefaultReservationService qui dépend de :
+
+- InMemorySalleRepository
+- InMemoryReservationRepository
+
+Règles métier (SOC & DRY) :
+- Validation de la salle :
+  - si salle inconnue -> IllegalArgumentException
+  - si salle en MAINTENANCE -> SalleIndisponibleException
+- Validation du créneau :
+  - si créneau dans le passé -> CreneauInvalideException
+- Cohérence métier :
+  - utiliser SalleUtils.estDisponible(...) pour vérifier la disponibilité :
+      - si indisponible -> SalleIndisponibleException
+- Création de réservation :
+  - générer un id simple (ex : "R-" + compteur ou timestamp)
+  - créer une Reservation EN_ATTENTE ou CONFIRMEE
+  - l’ajouter au repository de réservations
+- annulerReservation(String reservationId) :
+  - récupérer la réservation
+  - si absente -> IllegalArgumentException
+  - créer une nouvelle Reservation (immutabilité) avec état ANNULEE
+    ou, pour rester simple, garder l’objet tel quel et simuler l’annulation par suppression
+    (choix à expliciter en séance).
+
+DRY :
+- Factoriser la validation dans des méthodes privées :
+  - private Salle chargerSalleOuException(String salleId)
+  - private void verifierDisponibilite(Salle salle, Creneau creneau)
+
+Étape 5 : Mettre en place la « façade » d’application dans MainApp
+------------------------------------------------------------------
+Adapter room4u.MainApp pour ne parler qu’aux services, plus aux repositories :
+
+- Instancier les repositories (InMemorySalleRepository, InMemoryReservationRepository).
+- Instancier DefaultSalleService et DefaultReservationService avec ces repositories.
+- Ajouter quelques salles et éventuellement quelques réservations de départ.
+- Démontrer des scénarios :
+
+Exemples de scénarios :
+- Afficher toutes les salles et les salles disponibles.
+- Rechercher des salles par capacité + équipement.
+- Créer une réservation valide (salle disponible, créneau futur).
+- Tenter de créer une réservation sur :
+  - une salle en MAINTENANCE -> exception.
+  - un créneau passé -> exception.
+  - une salle déjà réservée sur ce créneau -> exception.
+- Lister les réservations d’une salle.
+- Annuler une réservation puis vérifier son absence ou son nouvel état.
+
+Sujets pédagogiques à souligner
+-------------------------------
+Découpage en couches :
+- domain ne dépend pas de service.
+- repository ne connaît pas la couche service.
+- service orchestre domain + repository.
+
+Orthogonalité :
+- Chaque classe a un rôle clair :
+  - domain : représentation métier
+  - repository : stockage
+  - service : cas d’usage et orchestration
+  - MainApp : interface (ici juste console)
+
+KISS :
+- Pas de framework, pas de magie, juste des POJO.
+- Des constructeurs explicites, pas d’injection compliquée.
+
+DRY :
+- Réutiliser SalleUtils.
+- Éviter de dupliquer la logique de validation :
+  - mettre en place des méthodes privées dans les services.
+
+SOC / POJO :
+- Séparation des responsabilités par package et par classe.
+- Classes simples, testables, sans héritage lourd ni annotations framework.

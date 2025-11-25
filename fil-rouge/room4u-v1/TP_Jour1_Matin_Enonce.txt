@@ -1,0 +1,236 @@
+TP Fil Rouge — Jour 1 (Matin)
+Énoncé détaillé enrichi – Modèle métier, généricité & bonnes pratiques Java
+===========================================================================
+
+Objectif pédagogique
+--------------------
+Mettre en place les fondations du projet Room4U en pratiquant les sujets suivants :
+
+- Object / equals / hashCode / toString
+- String (concatenation, formatage, propreté)
+- java.time (LocalDateTime, Duration)
+- Collections (List, Set, Map)
+- Optional
+- Streams
+- Lambda + immutabilité
+- Gestion des exceptions (métier et techniques)
+- Généricité
+
+Contexte
+--------
+Vous démarrez le développement de la nouvelle plateforme Java Room4U. Votre mission ce matin :
+modéliser le domaine métier, manipuler les types modernes de Java, et poser les bases de l’architecture
+(logique métier + repository en mémoire).
+
+Structure du projet
+-------------------
+Créer un projet Maven avec la structure suivante :
+
+src/main/java
+    room4u/
+        MainApp.java
+        domain/
+        repository/
+
+Étape 1 : Modélisation des entités
+----------------------------------
+
+1.1 Interface Identifiable<ID>
+------------------------------
+Créer room4u.domain.Identifiable<ID> :
+
+public interface Identifiable<ID> {
+    ID id();
+}
+
+Cette interface sera utilisée pour factoriser la gestion d'identifiants (généricité).
+
+1.2 Classe Salle
+----------------
+Créer room4u.domain.Salle avec les attributs :
+
+- String id
+- String nom
+- int capacite
+- Set<String> equipements
+- EtatSalle etat
+
+Créer aussi l’énumération room4u.domain.EtatSalle :
+
+- DISPONIBLE
+- RESERVEE
+- MAINTENANCE
+
+Contraintes :
+- Classe immuable (champs final, pas de setters).
+- Set<String> renvoyé non modifiable.
+- equals/hashCode basés sur id.
+- toString retournant une représentation lisible.
+- Salle implémente Identifiable<String>.
+
+Bonus String :
+- Ajouter une méthode description() qui retourne une chaîne de type :
+  "Salle A (id=A, capacite=4, equipements=[VISIO, TABLEAU], etat=DISPONIBLE)".
+
+1.3 Classe Creneau
+------------------
+Créer room4u.domain.Creneau avec :
+
+- LocalDateTime debut
+- Duration duree
+
+Méthodes :
+
+- LocalDateTime debut()
+- Duration duree()
+- LocalDateTime fin() : debut + duree
+- boolean overlap(Creneau other) : détecte le chevauchement
+- boolean estDansLePasse() : true si fin() est avant maintenant
+- long dureeEnMinutes() : durée totale en minutes
+
+Règle de chevauchement :
+Deux créneaux se chevauchent si :
+this.debut < other.fin() && other.debut < this.fin()
+
+En cas de durée nulle ou négative : lever CreneauInvalideException.
+
+1.4 Classe Reservation
+----------------------
+Créer room4u.domain.Reservation avec :
+
+- String id
+- String utilisateur
+- Salle salle
+- Creneau creneau
+- EtatReservation etat
+
+Enum room4u.domain.EtatReservation :
+
+- EN_ATTENTE
+- CONFIRMEE
+- ANNULEE
+
+Règles :
+
+- id et utilisateur non vides.
+- salle et creneau non null.
+- Interdire une réservation si salle.etat() == EtatSalle.MAINTENANCE (SalleIndisponibleException).
+
+Exercice Object :
+- Implémenter toString(), equals() et hashCode() pour Reservation,
+  en utilisant id comme identifiant logique.
+
+Étape 2 : Exceptions métier
+---------------------------
+Créer dans room4u.domain :
+
+- SalleIndisponibleException extends RuntimeException
+- CreneauInvalideException extends RuntimeException
+- CapaciteInsuffisanteException extends RuntimeException (sera utilisée plus tard)
+
+Étape 3 : Manipulation des types Java (Collections, Optional, Streams)
+----------------------------------------------------------------------
+
+Créer room4u.domain.SalleUtils avec les méthodes suivantes :
+
+3.1 Filtrer par capacité
+------------------------
+List<Salle> filtrerParCapacite(List<Salle> salles, int capaciteMin)
+
+- Renvoie les salles dont la capacité >= capaciteMin.
+
+3.2 Filtrer par équipement
+--------------------------
+List<Salle> filtrerParEquipement(List<Salle> salles, String equipement)
+
+- Renvoie les salles qui possèdent l’équipement donné.
+
+3.3 Trouver une salle par id
+----------------------------
+Optional<Salle> trouverSalle(List<Salle> salles, String id)
+
+- Renvoie la salle dont l’id correspond, ou Optional.empty().
+
+3.4 Trouver ou exception
+------------------------
+Salle trouverOuException(List<Salle> salles, String id)
+
+- Utilise Optional pour retrouver la salle.
+- Si aucune salle n’est trouvée, lever IllegalArgumentException avec un message explicite.
+
+3.5 Vérifier la disponibilité
+-----------------------------
+boolean estDisponible(Salle salle, Creneau creneau, List<Reservation> reservationsExistantes)
+
+- Renvoie false s’il existe une réservation sur la même salle avec chevauchement de créneau.
+
+3.6 Regrouper par état
+----------------------
+Map<EtatSalle, List<Salle>> regrouperParEtat(List<Salle> salles)
+
+- Utilise Streams et Collectors.groupingBy pour produire une Map.
+
+3.7 Regrouper par équipement
+----------------------------
+Map<String, List<Salle>> regrouperParEquipement(List<Salle> salles)
+
+- Chaque clé est le nom d’un équipement (VISIO, TABLEAU…).
+- La valeur associée est la liste des salles qui possèdent cet équipement.
+- Nécessite l’utilisation de Streams, flatMap, Collectors.groupingBy.
+
+3.8 Filtrage générique avec lambda
+----------------------------------
+List<Salle> filtrer(List<Salle> salles, java.util.function.Predicate<Salle> predicate)
+
+- Permet d’appliquer des filtres arbitraires avec des expressions lambda.
+- Exemple d’utilisation (dans MainApp) :
+  filtrer(salles, s -> s.capacite() > 5 && s.equipements().contains("VISIO"));
+
+Étape 4 : Généricité côté repository
+------------------------------------
+
+4.1 Interface Repository<ID, T>
+-------------------------------
+Créer room4u.repository.Repository<ID, T extends Identifiable<ID>> :
+
+public interface Repository<ID, T extends Identifiable<ID>> {
+    void ajouter(T entity);
+    Optional<T> trouverParId(ID id);
+    List<T> toutes();
+}
+
+4.2 Implémentation InMemorySalleRepository
+------------------------------------------
+Créer room4u.repository.InMemorySalleRepository qui implémente Repository<String, Salle> :
+
+- Utiliser une Map<String, Salle> interne.
+- ajouter(Salle salle) : ajoute/écrase par id.
+- trouverParId(String id) : Optional<Salle>.
+- toutes() : renvoie une liste non modifiable.
+
+Étape 5 : Petit scénario de test dans MainApp
+---------------------------------------------
+Dans room4u.MainApp, écrire des appels pour :
+
+- Créer 3 salles de capacités différentes avec des équipements (VISIO, TABLEAU…).
+- Les stocker dans InMemorySalleRepository.
+- Afficher toutes les salles.
+- Filtrer par capacité (>= 8) et afficher le résultat.
+- Filtrer par équipement "VISIO" et afficher le résultat.
+- Utiliser filtrer(...) avec une lambda pour trouver les salles de capacité > 5 avec VISIO.
+- Créer deux créneaux qui se chevauchent et tester overlap, estDansLePasse(), dureeEnMinutes().
+- Créer une réservation sur un créneau, puis vérifier la disponibilité sur :
+  - un créneau qui chevauche -> estDisponible == false
+  - un créneau distant       -> estDisponible == true.
+- Tester regrouperParEtat et regrouperParEquipement en affichant les Maps obtenues.
+
+Résultat attendu
+----------------
+À l’issue de la demi-journée, vous devez disposer :
+
+- d’un modèle métier propre, immuable, documenté.
+- d’exceptions métier cohérentes.
+- d’utilitaires travaillant avec Streams, Optional, Collections.
+- d’un repository générique spécialisé sur Salle.
+- d’exemples de lambdas utilisés dans MainApp et SalleUtils.
+- d’un aperçu concret de la généricité côté métier (Identifiable<ID>, Repository<ID, T>).
