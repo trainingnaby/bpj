@@ -1,0 +1,30 @@
+
+
+Classe Object
+	equals
+	hashcode
+	clone
+	toString
+	
+Les threads : effets de bord et synchronisation d'objets partagés
+	synchronized
+	volatile
+	
+L'immutabilité
+	rendre immuable une classe classique
+	Utilisation des records
+	
+La généricité en Java
+
+La pogrammation fonctionnelle et les lambdas
+	Predicate
+	Supplier
+	Function
+	Consumer
+	
+La classe Optional et la gestion des nullpointerexception
+	
+
+	
+	
+	
