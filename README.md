@@ -7,3 +7,4 @@ Partage de texte => https://digidoc.app/p/bpj
 Lien emargement https://docadmin.orsys.fr/
 Mot de passe : qzgEc7BDt
 
+Mail pour des questions supllementaires : naby.gueye@gmail.com
