@@ -1,0 +1,195 @@
+TP Fil Rouge — Jour 3 (Matin)
+Tests unitaires, tests d’intégration, mocks & stubs
+===================================================
+
+Contexte
+--------
+Vous travaillez toujours sur l’application Room4U de réservation de salles. 
+Le code métier est maintenant relativement riche : domaine, repositories en mémoire, services, patterns, service asynchrone…
+
+Dans cette demi-journée, l’objectif est de mettre en place une vraie
+stratégie de tests autour de ce code :
+
+- Écrire des **tests unitaires** ciblés sur des classes de domaine et utilitaires.
+- Écrire des **tests d’intégration** pour vérifier le bon fonctionnement de la chaîne
+  service + repository + patterns.
+- Utiliser des **stubs** (implémentations simplifiées pour les tests) et des **mocks** (via Mockito)
+  pour isoler certaines classes.
+
+Le tout doit rester cohérent avec le domaine Room4U.
+
+Structure de départ
+-------------------
+Le projet contient notamment :
+
+- room4u.domain
+    - Salle, Creneau, Reservation, EtatSalle, EtatReservation
+    - Exceptions : SalleIndisponibleException, CreneauInvalideException, CapaciteInsuffisanteException
+    - SalleUtils (filtres, disponibilité, regroupement)
+- room4u.repository
+    - Repository<ID, T>, InMemorySalleRepository, InMemoryReservationRepository
+- room4u.patterns
+    - singleton.ReservationIdGenerator
+    - strategy.PricingStrategy, StandardPricingStrategy, PeakHoursPricingStrategy
+    - factory.ReservationFactory, DefaultReservationFactory
+- room4u.service
+    - SalleService, DefaultSalleService
+    - ReservationService, DefaultReservationService
+    - AsyncReservationService, AsyncReservationServiceImpl
+
+Les dépendances JUnit 5 et Mockito sont déjà configurées dans le pom.
+
+Étape 1 – Tests unitaires de base (domaine / utilitaires)
+---------------------------------------------------------
+
+1.1 Tester la classe Creneau
+----------------------------
+
+Objectifs :
+
+- Vérifier la construction valide d’un créneau.
+- Vérifier que les validations fonctionnent (durée négative -> exception).
+- Vérifier la logique métier overlap et estDansLePasse.
+
+À faire :
+
+- Créez une classe de test `room4u.domain.CreneauTest`.
+- Écrivez des méthodes de test (annotées `@Test`) pour vérifier que :
+    - un créneau construit avec une date future et une durée positive
+      expose bien le début, la durée et la fin attendue ;
+    - une durée négative déclenche `CreneauInvalideException` ;
+    - deux créneaux qui se chevauchent font retourner `true` à `overlap` ;
+    - deux créneaux disjoints font retourner `false` ;
+    - `estDansLePasse` retourne `true` pour un créneau terminé, `false` pour un créneau futur.
+
+1.2 Tester SalleUtils
+---------------------
+
+Objectifs :
+
+- Vérifier les méthodes de filtrage et de regroupement.
+- Vérifier la logique de disponibilité d’une salle sur un créneau.
+
+À faire :
+
+- Créez `room4u.domain.SalleUtilsTest`.
+- Dans `@BeforeEach`, construisez 3 salles :
+    - une petite salle disponible,
+    - une grande salle disponible,
+    - une salle en maintenance.
+- Écrivez des tests pour :
+    - `filtrerParCapacite` (par ex. capacité >= 8 retourne la grande salle + la salle en maintenance) ;
+    - `filtrerParEquipement` (par ex. "VISIO" retourne les salles équipées) ;
+    - `estDisponible` (retourne `false` si une réservation existante chevauche le créneau testé,
+      `true` sinon) ;
+    - `regrouperParEtat` pour vérifier que les salles sont regroupées par DISPONIBLE / MAINTENANCE.
+
+Étape 2 – Tests unitaires avec stub (patterns)
+----------------------------------------------
+
+2.1 Tester PeakHoursPricingStrategy
+-----------------------------------
+
+Objectifs :
+
+- Vérifier qu’un créneau en heures de pointe (9h–18h) est plus cher qu’un créneau en heures creuses.
+- Montrer l’utilisation de `java.time` dans un test.
+
+À faire :
+
+- Créez `room4u.patterns.strategy.PeakHoursPricingStrategyTest`.
+- Écrivez un test qui :
+    - crée une salle disponible,
+    - construit un créneau à 10h (en s’assurant qu’il soit dans le futur),
+    - vérifie que le prix est de 20.00 (base 10.00 x2).
+- Écrivez un autre test pour un créneau à 20h (hors heures de pointe) avec un prix 10.00.
+
+2.2 Tester DefaultReservationFactory avec un stub de PricingStrategy
+--------------------------------------------------------------------
+
+Objectifs :
+
+- Montrer comment isoler la factory en remplaçant une stratégie par un stub.
+- Contrôler le prix produit par la factory.
+
+À faire :
+
+- Créez `room4u.patterns.factory.DefaultReservationFactoryTest`.
+- À l’intérieur, définissez une classe `FixedPricingStrategy` qui implémente `PricingStrategy`
+  et retourne toujours `42.00`.
+- Dans un test :
+    - instanciez `ReservationIdGenerator.INSTANCE`,
+    - créez une `DefaultReservationFactory` avec ce générateur + votre stub `FixedPricingStrategy`,
+    - créez une salle et un créneau valide,
+    - appelez `creerReservation` et vérifiez :
+        - que l’id n’est pas null,
+        - que l’utilisateur est bien propagé,
+        - que l’état est `CONFIRMEE`,
+        - que le prix est exactement `42.00`.
+
+Étape 3 – Test d’intégration du service de réservation synchrone
+----------------------------------------------------------------
+
+Objectifs :
+
+- Tester le comportement métier de bout en bout de `DefaultReservationService`.
+- Utiliser les repositories en mémoire réels et la vraie factory.
+
+À faire :
+
+- Créez `room4u.service.DefaultReservationServiceIntegrationTest`.
+- Dans `@BeforeEach` :
+    - créez un `InMemorySalleRepository` et un `InMemoryReservationRepository`,
+    - créez un `ReservationFactory` réel (`DefaultReservationFactory` + `ReservationIdGenerator` + `StandardPricingStrategy`),
+    - instanciez `DefaultReservationService` avec ces dépendances,
+    - ajoutez deux salles :
+        - A : DISPONIBLE
+        - B : MAINTENANCE.
+- Écrivez des tests pour vérifier :
+    - qu’une réservation valide sur la salle A est bien persistée dans le repository ;
+    - qu’une réservation sur la salle en maintenance déclenche `SalleIndisponibleException` ;
+    - qu’un créneau dans le passé déclenche `CreneauInvalideException` ;
+    - qu’une tentative de réservation chevauchant une réservation existante
+      déclenche `SalleIndisponibleException`.
+
+Étape 4 – Mocks avec Mockito sur AsyncReservationServiceImpl
+------------------------------------------------------------
+
+Objectifs :
+
+- Isoler `AsyncReservationServiceImpl` de ses dépendances techniques (repository, factory).
+- Vérifier que les bonnes méthodes sont invoquées sur les mocks.
+- Montrer l’usage de Mockito avec JUnit 5.
+
+À faire :
+
+- Créez `room4u.service.AsyncReservationServiceImplMockTest`.
+- Annotez la classe avec `@ExtendWith(MockitoExtension.class)`.
+- Ajoutez 3 champs annotés `@Mock` :
+    - `InMemorySalleRepository salleRepository`,
+    - `InMemoryReservationRepository reservationRepository`,
+    - `ReservationFactory reservationFactory`.
+- Dans un test :
+    - instanciez `AsyncReservationServiceImpl` avec ces mocks et un `Executors.newSingleThreadExecutor()` comme executor ;
+    - créez une salle disponible, un créneau futur, et une réservation (objet réel) ;
+    - configurez les mocks pour que :
+        - `salleRepository.trouverParId("A")` retourne la salle,
+        - `reservationRepository.trouverParSalle("A")` retourne une liste vide,
+        - `reservationFactory.creerReservation(...)` retourne la réservation.
+    - appelez `creerReservationStrong("A", "alice", creneau)` et utilisez `future.get()` pour obtenir le résultat ;
+    - vérifiez :
+        - que la réservation renvoyée est bien l’instance retournée par la factory (`assertSame`) ;
+        - que `reservationFactory.creerReservation(...)` est bien appelée exactement une fois ;
+        - que `reservationRepository.ajouter(...)` est appelée avec une réservation dont l’id vaut "R1" (via `ArgumentCaptor`).
+
+Étape 5 – Synthèse
+------------------
+
+À la fin de cette demi-journée, vous devez :
+
+- Savoir écrire des tests unitaires simples sur des classes de domaine.
+- Savoir écrire des tests d’intégration qui branchent plusieurs couches (service + repository + patterns).
+- Distinguer **stub** et **mock** :
+    - stub : implémentation simplifiée que vous écrivez à la main (ex. FixedPricingStrategy),
+    - mock : objet créé par un framework (Mockito) pour vérifier les interactions.
+- Comprendre comment organiser vos tests dans un projet Maven (src/test/java, packages mirroirs).

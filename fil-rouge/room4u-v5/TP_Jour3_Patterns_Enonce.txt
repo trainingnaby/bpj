@@ -1,0 +1,254 @@
+TP Fil Rouge — Jour 3 (Matin)
+Patterns de conception : Factory, Singleton, Prototype, Strategy, Proxy
+======================================================================
+
+Objectif pédagogique
+--------------------
+Sur la base du TP précédent (annotations, découpage en couches, services et repositories),
+vous allez introduire plusieurs patterns de conception orientés objet :
+
+- Factory        : centraliser la création des réservations
+- Singleton      : gérer un générateur d’identifiants unique
+- Prototype      : dupliquer facilement des modèles de réservations récurrentes
+- Strategy       : varier l’algorithme de calcul du prix d’une réservation
+- Proxy          : ajouter des comportements transverses (logging) autour du service de réservation
+
+Le tout dans le domaine métier de Room4U (réservation de salles).
+
+Structure de départ
+-------------------
+Reprendre la structure (simplifiée) :
+
+room4u.domain         : Salle, Creneau, Reservation, EtatSalle, EtatReservation, SalleUtils...
+room4u.repository     : Repository, InMemorySalleRepository, InMemoryReservationRepository...
+room4u.service        : SalleService/DefaultSalleService, ReservationService/DefaultReservationService...
+room4u.annotations    : UseCase, RepositoryComponent, AnnotationExplorer
+room4u.MainApp        : point d’entrée
+
+Vous allez ajouter :
+
+room4u.patterns.singleton   : Singleton(s) métier/technique
+room4u.patterns.strategy    : stratégies de calcul du prix
+room4u.patterns.factory     : factory de création de Reservation
+room4u.patterns.prototype   : prototypes de réservations récurrentes
+room4u.patterns.proxy       : proxy de ReservationService
+
+Étape 1 : Adapter le modèle pour gérer un prix de réservation
+-------------------------------------------------------------
+
+1.1 Ajouter un prix à Reservation
+---------------------------------
+Dans room4u.domain.Reservation, ajouter :
+
+- un attribut final java.math.BigDecimal prix
+- un getter public java.math.BigDecimal prix()
+- mise à jour du constructeur pour exiger un prix non nul et >= 0
+- mise à jour de toString() pour afficher le prix
+
+L’égalité (equals/hashCode) reste basée sur id uniquement.
+
+Ce prix sera calculé par une Strategy lors de la création de la réservation.
+
+Étape 2 : Singleton – générateur d’identifiants
+-----------------------------------------------
+
+Créer room4u.patterns.singleton.ReservationIdGenerator :
+
+- Implémentation sous forme d’énumération singleton :
+
+    public enum ReservationIdGenerator {
+        INSTANCE;
+
+        private final java.util.concurrent.atomic.AtomicInteger sequence = new java.util.concurrent.atomic.AtomicInteger(1);
+
+        public String nextId() {
+            return "R-" + sequence.getAndIncrement();
+        }
+    }
+
+Objectif :
+- Fournir un point unique de génération d’identifiants de réservations.
+- Montrer un Singleton simple, sans dépendance à un framework.
+
+Étape 3 : Strategy – calcul du prix
+-----------------------------------
+
+3.1 Interface PricingStrategy
+-----------------------------
+Créer room4u.patterns.strategy.PricingStrategy :
+
+- java.math.BigDecimal calculerPrix(Salle salle, Creneau creneau);
+
+3.2 Implémentation StandardPricingStrategy
+------------------------------------------
+Créer room4u.patterns.strategy.StandardPricingStrategy :
+
+- Calcule un prix simple : par exemple, 10 unités par heure entamée.
+- Utilise la durée du créneau (java.time.Duration) pour déterminer le prix.
+
+3.3 Implémentation PeakHoursPricingStrategy
+-------------------------------------------
+Créer room4u.patterns.strategy.PeakHoursPricingStrategy :
+
+- Même logique de base que StandardPricingStrategy
+- Avec un multiplicateur (par exemple x2) si la réunion démarre dans une plage « heures de pointe »
+  (ex : entre 9h et 18h).
+
+Objectif :
+- Montrer comment changer de stratégie de pricing en changeant simplement l’implémentation
+  injectée.
+
+Étape 4 : Factory – création centralisée des réservations
+---------------------------------------------------------
+
+4.1 Interface ReservationFactory
+--------------------------------
+Créer room4u.patterns.factory.ReservationFactory :
+
+- Reservation creerReservation(Salle salle, String utilisateur, Creneau creneau);
+
+4.2 Implémentation DefaultReservationFactory
+--------------------------------------------
+Créer room4u.patterns.factory.DefaultReservationFactory qui dépend de :
+
+- ReservationIdGenerator (Singleton)
+- PricingStrategy
+
+Injection par constructeur :
+
+- public DefaultReservationFactory(ReservationIdGenerator idGenerator, PricingStrategy pricingStrategy)
+
+Implémentation de creerReservation :
+
+- Générer l’id via idGenerator.nextId()
+- Calculer le prix via pricingStrategy.calculerPrix(salle, creneau)
+- Créer et retourner une nouvelle Reservation avec :
+  - id généré
+  - utilisateur
+  - salle
+  - creneau
+  - EtatReservation.CONFIRMEE
+  - prix calculé
+
+Objectif :
+- Centraliser la logique de création (Factory).
+- Décharger la couche service des détails de création.
+
+Étape 5 : Prototype – modèles de réservations récurrentes
+---------------------------------------------------------
+
+Créer room4u.patterns.prototype.ReservationTemplate :
+
+Attributs immuables :
+
+- Salle salle
+- String utilisateur
+- java.time.Duration duree
+
+Constructeur :
+
+- ReservationTemplate(Salle salle, String utilisateur, Duration duree)
+
+Méthode principale :
+
+- public Reservation creerPourDate(java.time.LocalDateTime debut, ReservationFactory factory)
+
+  - Crée un Creneau basé sur debut + duree
+  - Utilise la factory pour créer une Reservation pour cette date
+
+Objectif :
+- Illustrer Prototype : on capture un « modèle de réservation » (salle + utilisateur + durée)
+  que l’on réapplique facilement sur de nouvelles dates.
+- On peut ainsi, par exemple, créer des réservations récurrentes sur plusieurs jours.
+
+Étape 6 : Proxy – ajouter du logging autour du service de réservation
+---------------------------------------------------------------------
+
+Créer room4u.patterns.proxy.LoggingReservationServiceProxy qui implémente ReservationService :
+
+Attribut :
+
+- private final ReservationService delegate;
+
+Constructeur :
+
+- public LoggingReservationServiceProxy(ReservationService delegate)
+
+Implémentation de chaque méthode :
+
+- Log simple sur la console avant et/ou après l’appel délégué :
+  - créerReservation(...) : afficher les paramètres et le résultat
+  - listerToutesLesReservations() : afficher le nombre de réservations
+  - listerReservationsPourSalle(...) : afficher l’id de la salle
+  - annulerReservation(...) : afficher l’id de la réservation annulée
+
+Objectif :
+- Montrer comment ajouter un comportement transverse (logging) sans modifier l’implémentation
+  métier (DefaultReservationService).
+
+Étape 7 : Adapter DefaultReservationService pour utiliser la Factory
+--------------------------------------------------------------------
+
+Dans room4u.service.DefaultReservationService :
+
+- Ajouter un attribut final ReservationFactory reservationFactory.
+- Injecter la ReservationFactory via le constructeur.
+- Dans creerReservation(String salleId, String utilisateur, Creneau creneau) :
+  - Charger la salle via le repository.
+  - Vérifier le créneau (non passé).
+  - Vérifier la disponibilité via SalleUtils.estDisponible(...)
+  - Appeler reservationFactory.creerReservation(salle, utilisateur, creneau)
+  - Ajouter la réservation résultante au repository.
+  - Retourner la réservation.
+
+Supprimer l’ancienne logique de génération d’id interne : la Factory s’en occupe désormais.
+
+Les autres méthodes (lister..., annuler...) restent inchangées, à part les imports et dépendances.
+
+Étape 8 : Intégration complète dans MainApp
+-------------------------------------------
+
+Dans room4u.MainApp :
+
+1. Créer les repositories :
+   - InMemorySalleRepository
+   - InMemoryReservationRepository
+
+2. Créer les services de salles :
+   - DefaultSalleService (inchangé)
+
+3. Créer les éléments de patterns :
+   - ReservationIdGenerator idGenerator = ReservationIdGenerator.INSTANCE;
+   - PricingStrategy pricingStrategy = new PeakHoursPricingStrategy(); // ou StandardPricingStrategy
+   - ReservationFactory reservationFactory = new DefaultReservationFactory(idGenerator, pricingStrategy);
+
+4. Créer le service de réservation « core » :
+   - ReservationService coreReservationService =
+       new DefaultReservationService(salleRepository, reservationRepository, reservationFactory);
+
+5. Créer le proxy de logging :
+   - ReservationService reservationService =
+       new LoggingReservationServiceProxy(coreReservationService);
+
+6. Optionnel : explorer les annotations (UseCase, RepositoryComponent) comme dans le TP précédent
+   via AnnotationExplorer.
+
+7. Scénarios à démontrer :
+   - Création de quelques salles (dont une en MAINTENANCE).
+   - Affichage de toutes les salles, des salles disponibles.
+   - Création d’une réservation valide (prix affiché dans toString).
+   - Tentative de réservation sur :
+     - une salle en MAINTENANCE -> SalleIndisponibleException
+     - un créneau passé -> CreneauInvalideException
+     - un créneau chevauchant une réservation existante -> SalleIndisponibleException
+   - Utilisation de ReservationTemplate pour créer 2 ou 3 réservations récurrentes
+     (par exemple, tous les jours à 10h, sur 3 jours).
+   - Affichage du log produit par LoggingReservationServiceProxy.
+
+Résultat attendu
+----------------
+À la fin de cette demi-journée, les stagiaires doivent :
+
+- Comprendre le rôle de chacun des patterns (Factory, Singleton, Prototype, Strategy, Proxy).
+- Voir comment ces patterns s’intègrent dans une architecture en couches existante.
+- Manipuler le domaine métier Room4U avec ces patterns en place.

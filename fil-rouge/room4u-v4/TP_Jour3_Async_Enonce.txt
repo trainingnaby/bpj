@@ -1,0 +1,229 @@
+TP Fil Rouge — Jour 3 (Après-midi)
+CompletableFuture, accès non bloquant, cohérence forte vs cohérence à terme
+===========================================================================
+
+Objectif pédagogique
+--------------------
+Toujours sur le domaine Room4U (réservation de salles), cette demi-journée vise à :
+
+- Introduire la programmation asynchrone avec CompletableFuture
+- Mettre en place des accès non bloquants aux services de réservation
+- Illustrer la différence entre cohérence forte et cohérence à terme dans un système distribué (simulé)
+
+Nous restons en Java « pur », sans framework, en simulant les latences via Thread.sleep
+et en orchestrant le tout avec CompletableFuture.
+
+Structure de départ
+-------------------
+Vous disposez déjà (hérité de la demi-journée Patterns) :
+
+- room4u.domain
+    - Salle, Creneau, Reservation (avec prix BigDecimal)
+    - EtatSalle, EtatReservation
+    - Exceptions : SalleIndisponibleException, CreneauInvalideException, CapaciteInsuffisanteException
+    - SalleUtils (disponibilité, filtrage, regroupement)
+    - Identifiable<ID>
+
+- room4u.repository
+    - Repository<ID, T>
+    - InMemorySalleRepository
+    - InMemoryReservationRepository
+
+- room4u.annotations
+    - UseCase, RepositoryComponent, AnnotationExplorer
+
+- room4u.patterns
+    - singleton.ReservationIdGenerator
+    - strategy.PricingStrategy, StandardPricingStrategy, PeakHoursPricingStrategy
+    - factory.ReservationFactory, DefaultReservationFactory
+
+- room4u.service
+    - SalleService, DefaultSalleService
+    - ReservationService, DefaultReservationService (synchrone) — utilisé la demi-journée précédente
+
+Objectif de CE TP : ajouter un service asynchrone et adapter MainApp pour démontrer :
+
+1. des appels en parallèle non bloquants,
+2. la différence entre cohérence forte et cohérence à terme.
+
+Étape 1 – Définir un service asynchrone
+---------------------------------------
+
+Créer l’interface room4u.service.AsyncReservationService :
+
+- Toutes les méthodes retournent un CompletableFuture :
+
+    @UseCase("Créer une réservation avec cohérence forte (async)")
+    CompletableFuture<Reservation> creerReservationStrong(String salleId, String utilisateur, Creneau creneau);
+
+    @UseCase("Créer une réservation avec cohérence à terme (async)")
+    CompletableFuture<Reservation> creerReservationEventual(String salleId, String utilisateur, Creneau creneau);
+
+    @UseCase("Lister toutes les réservations (async)")
+    CompletableFuture<List<Reservation>> listerToutesLesReservations();
+
+    @UseCase("Lister les réservations pour une salle (async)")
+    CompletableFuture<List<Reservation>> listerReservationsPourSalle(String salleId);
+
+Cette interface représente l’API non bloquante à exposer aux clients de Room4U.
+
+Étape 2 – Implémenter AsyncReservationServiceImpl
+--------------------------------------------------
+
+Créer la classe room4u.service.AsyncReservationServiceImpl :
+
+Dépendances (par constructeur) :
+
+- InMemorySalleRepository salleRepository
+- InMemoryReservationRepository reservationRepository
+- ReservationFactory reservationFactory
+- java.util.concurrent.Executor executor
+
+Stocker tout cela dans des champs finals, avec Objects.requireNonNull.
+
+2.1 Méthode creerReservationStrong
+----------------------------------
+
+Implémenter :
+
+    public CompletableFuture<Reservation> creerReservationStrong(String salleId, String utilisateur, Creneau creneau)
+
+- Utiliser CompletableFuture.supplyAsync(() -> { ... }, executor)
+- À l’intérieur du lambda :
+    - charger la salle via salleRepository.trouverParId(...).orElseThrow(...)
+    - vérifier que le créneau n’est pas dans le passé (sinon CreneauInvalideException)
+    - vérifier la disponibilité via SalleUtils.estDisponible(...)
+      (en récupérant les réservations existantes sur cette salle)
+    - créer la réservation via reservationFactory
+    - simuler une latence d’écriture (Thread.sleep(500))
+    - ajouter la réservation dans reservationRepository
+    - retourner la réservation
+
+Interprétation :
+- le CompletableFuture n’est complété qu’après l’écriture en repository,
+- côté client, tant que le future n’est pas terminé, on ne considère pas la réservation comme confirmée :
+  c’est un comportement de cohérence forte.
+
+2.2 Méthode creerReservationEventual
+------------------------------------
+
+Implémenter :
+
+    public CompletableFuture<Reservation> creerReservationEventual(String salleId, String utilisateur, Creneau creneau)
+
+- Dans le thread appelant (pas dans supplyAsync) :
+    - charger la salle
+    - vérifier le créneau
+    - vérifier la disponibilité
+    - créer la réservation via reservationFactory
+
+- Démarrer ensuite un CompletableFuture.runAsync(() -> { ... }, executor) qui :
+    - simule la latence (Thread.sleep(500))
+    - ajoute la réservation dans reservationRepository
+
+- Retourner immédiatement CompletableFuture.completedFuture(reservation)
+
+Interprétation :
+- le client reçoit tout de suite une réservation « acceptée »
+- le stockage effectif se fait un peu plus tard : c’est l’illustration de la cohérence à terme.
+
+2.3 Méthodes de lecture
+------------------------
+
+Implémenter :
+
+    public CompletableFuture<List<Reservation>> listerToutesLesReservations()
+    public CompletableFuture<List<Reservation>> listerReservationsPourSalle(String salleId)
+
+- En utilisant CompletableFuture.supplyAsync(..., executor)
+- Ainsi, même les lectures peuvent être orchestrées de façon non bloquante.
+
+Étape 3 – Intégrer dans MainApp
+--------------------------------
+
+Adapter room4u.MainApp pour :
+
+1. Créer les repositories :
+   - InMemorySalleRepository, InMemoryReservationRepository
+
+2. Créer le service de salles (synchrone) :
+   - new DefaultSalleService(salleRepository)
+
+3. Configurer les patterns pour la création :
+   - ReservationIdGenerator.INSTANCE
+   - PricingStrategy pricingStrategy = new PeakHoursPricingStrategy();
+   - ReservationFactory reservationFactory = new DefaultReservationFactory(idGenerator, pricingStrategy);
+
+4. Créer un ExecutorService :
+   - ExecutorService executor = Executors.newFixedThreadPool(4);
+
+5. Instancier AsyncReservationService :
+   - AsyncReservationService asyncReservationService =
+         new AsyncReservationServiceImpl(salleRepository, reservationRepository, reservationFactory, executor);
+
+6. Afficher les use cases et repositories :
+   - AnnotationExplorer.printUseCases(SalleService.class, AsyncReservationService.class);
+   - AnnotationExplorer.printRepositories(InMemorySalleRepository.class, InMemoryReservationRepository.class);
+
+7. Initialiser quelques salles :
+   - A : DISPONIBLE
+   - B : DISPONIBLE
+   - C : MAINTENANCE (pour déclencher éventuellement des erreurs)
+
+Étape 4 – Scénario 1 : cohérence forte & parallélisme
+------------------------------------------------------
+
+- Créer deux créneaux futurs (c1, c2) sur la salle A.
+- Lancer en parallèle :
+
+    CompletableFuture<?> fAlice = asyncReservationService
+        .creerReservationStrong("A", "alice", c1)
+        .thenAccept(r -> System.out.println("Réservation strong (alice) : " + r));
+
+    CompletableFuture<?> fBob = asyncReservationService
+        .creerReservationStrong("A", "bob", c2)
+        .thenAccept(r -> System.out.println("Réservation strong (bob) : " + r));
+
+- Utiliser CompletableFuture.allOf(fAlice, fBob).join() pour attendre la fin des deux.
+- Appeler ensuite asyncReservationService.listerReservationsPourSalle("A").get()
+  et afficher le nombre de réservations (2).
+
+Discussion :
+- Tant que les futures ne sont pas complétés, on ne considère pas les réservations comme « visibles ».
+- Ici, on attend la confirmation complète avant d’exposer l’état -> cohérence forte.
+
+Étape 5 – Scénario 2 : cohérence à terme
+----------------------------------------
+
+- Créer un créneau futur c3.
+- Appeler :
+
+    CompletableFuture<Reservation> fCharlie =
+        asyncReservationService.creerReservationEventual("A", "charlie", c3);
+
+- Récupérer la réservation retournée (fCharlie.get()) et l’afficher.
+- Juste après, interroger directement le repository :
+
+    System.out.println("Réservations pour A (juste après eventual) : "
+        + reservationRepository.trouverParSalle("A").size());
+
+- Laisser passer un peu de temps (ex. Thread.sleep(800))
+- Réinterroger reservationRepository.trouverParSalle("A").size()
+  et constater que la réservation de charlie est maintenant visible.
+
+Discussion :
+- L’API répond immédiatement avec une réservation « acceptée ».
+- L’état global du système converge plus tard : cohérence à terme.
+
+Étape 6 – Bilan pédagogique
+---------------------------
+
+À la fin de ce TP, vous devez être capables de :
+
+- Créer un service métier asynchrone avec CompletableFuture.
+- Utiliser supplyAsync, runAsync, completedFuture, allOf, thenAccept.
+- Comprendre et expliquer la différence entre :
+    - Cohérence forte (strong consistency)
+    - Cohérence à terme (eventual consistency)
+- Relier ces notions à des architectures réelles (microservices, systèmes distribués)
+  tout en ayant un exemple concret et exécutable en Java pur.
