@@ -1,0 +1,18 @@
+
+
+TP fil rouge 
+	Applications (streams, optional, decoupage en couches, kiss, dry, soc,)
+
+Collections	
+	Importance du choix
+	complexité des operations standard sur les collections les plus utilisés
+	
+Bonnes pratiques de conception 
+	patterns / antipatterns
+	designs patterns
+	
+Annotations pour la programation declarative
+	creation custom
+	Utilisation de la reflexion pour l'exploitation
+
+
